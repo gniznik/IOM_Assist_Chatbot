@@ -10,7 +10,7 @@ load_dotenv()
 # Configuration
 st.set_page_config(
     page_title="IOM Assist",
-    page_icon="🧠",
+    page_icon="App-Icon.ico",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -51,7 +51,8 @@ def call_n8n_webhook(user_message):
 def main():
     # Sidebar for user info and settings
     with st.sidebar:
-        st.title("🧠 IOM Assist")
+        st.image("App-Icon.ico", width=80)
+        st.title("IOM Assist")
         st.markdown("---")
         
         # User authentication placeholder
@@ -95,7 +96,11 @@ def main():
 
     # Main chat interface
     if st.session_state.user_authenticated:
-        st.title("IOM Assist")
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            st.image("App-Icon.ico", width=80)
+        with col2:
+            st.title("IOM Assist")
         st.markdown("Ask me anything about intraoperative neuromonitoring techniques, troubleshooting, or protocols.")
         
         # Chat history
@@ -130,7 +135,11 @@ def main():
                 st.rerun()
                 
     else:
-        st.title("🧠 IOM Assist")
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            st.image("App-Icon.ico", width=80)
+        with col2:
+            st.title("IOM Assist")
         st.markdown("""
         ### Welcome to IOM Assist
         
