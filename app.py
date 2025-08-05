@@ -10,7 +10,7 @@ load_dotenv()
 # Configuration
 st.set_page_config(
     page_title="IOM Assist",
-    page_icon="🧠",
+    page_icon="App-Icon.ico",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -20,6 +20,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "user_authenticated" not in st.session_state:
     st.session_state.user_authenticated = False
+if "last_message_count" not in st.session_state:
+    st.session_state.last_message_count = 0
 
 def call_n8n_webhook(user_message):
     """Send message to n8n workflow and get response"""
@@ -51,7 +53,8 @@ def call_n8n_webhook(user_message):
 def main():
     # Sidebar for user info and settings
     with st.sidebar:
-        st.title("🧠 IOM Assist")
+        st.image("App-Icon.ico", width=80)
+        st.title("IOM Assist")
         st.markdown("---")
         
         # User authentication placeholder
@@ -70,6 +73,7 @@ def main():
             if st.button("Logout"):
                 st.session_state.user_authenticated = False
                 st.session_state.messages = []
+                st.session_state.last_message_count = 0
                 st.rerun()
             
             st.markdown("---")
@@ -95,7 +99,11 @@ def main():
 
     # Main chat interface
     if st.session_state.user_authenticated:
-        st.title("IOM Assist")
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            st.image("App-Icon.ico", width=80)
+        with col2:
+            st.title("IOM Assist")
         st.markdown("Ask me anything about intraoperative neuromonitoring techniques, troubleshooting, or protocols.")
         
         # Chat history
@@ -105,32 +113,47 @@ def main():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
         
+        # Auto-scroll to bottom when new messages are added
+        if len(st.session_state.messages) > st.session_state.last_message_count:
+            st.session_state.last_message_count = len(st.session_state.messages)
+            # Use JavaScript to scroll to bottom
+            st.markdown(
+                """
+                <script>
+                    window.scrollTo(0, document.body.scrollHeight);
+                </script>
+                """,
+                unsafe_allow_html=True
+            )
+        
         # Chat input
         if prompt := st.chat_input("Ask your IONM question..."):
             # Add user message
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # Display user message immediately
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            # Get and display assistant response
-            with st.chat_message("assistant"):
-                with st.spinner("Analyzing your question..."):
-                    response = call_n8n_webhook(prompt)
-                st.markdown(response)
+            # Get assistant response
+            with st.spinner("Analyzing your question..."):
+                response = call_n8n_webhook(prompt)
             
             # Add assistant response to session state
             st.session_state.messages.append({"role": "assistant", "content": response})
+            
+            # Rerun to update the display
+            st.rerun()
         
         # Clear chat button
         if st.session_state.messages:
             if st.button("Clear Chat History"):
                 st.session_state.messages = []
+                st.session_state.last_message_count = 0
                 st.rerun()
                 
     else:
-        st.title("🧠 IOM Assist")
+        col1, col2 = st.columns([1, 6])
+        with col1:
+            st.image("App-Icon.ico", width=80)
+        with col2:
+            st.title("IOM Assist")
         st.markdown("""
         ### Welcome to IOM Assist
         
