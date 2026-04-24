@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import os
 from dotenv import load_dotenv
-import time
+from supabase import create_client, Client
 
 # Load environment variables
 load_dotenv()
@@ -15,12 +15,43 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize Supabase client
+supabase: Client = create_client(
+    os.getenv('SUPABASE_URL'),
+    os.getenv('SUPABASE_ANON_KEY')
+)
+
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "user_authenticated" not in st.session_state:
-    st.session_state.user_authenticated = False
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "user_role" not in st.session_state:
+    st.session_state.user_role = None
 if "last_message_count" not in st.session_state:
+    st.session_state.last_message_count = 0
+
+def login(email, password):
+    """Authenticate user with Supabase"""
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        st.session_state.user = response.user
+        # Get user role from profiles table
+        profile = supabase.table('profiles').select('role').eq('id', response.user.id).single().execute()
+        st.session_state.user_role = profile.data['role']
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def logout():
+    """Log out current user"""
+    supabase.auth.sign_out()
+    st.session_state.user = None
+    st.session_state.user_role = None
+    st.session_state.messages = []
     st.session_state.last_message_count = 0
 
 def call_n8n_webhook(user_message):
@@ -51,35 +82,39 @@ def call_n8n_webhook(user_message):
         return f"Error: {str(e)}"
 
 def main():
-    # Sidebar for user info and settings
     with st.sidebar:
         st.image("App-Icon.ico", width=80)
         st.title("IOM Assist")
         st.markdown("---")
         
-        # User authentication placeholder
-        if not st.session_state.user_authenticated:
-            st.subheader("Access Required")
-            access_code = st.text_input("Enter access code:", type="password")
-            if st.button("Authenticate"):
-                # Replace with your actual authentication logic
-                if access_code == os.getenv('ACCESS_CODE', 'demo123'):
-                    st.session_state.user_authenticated = True
-                    st.rerun()
+        if st.session_state.user is None:
+            # Login form
+            st.subheader("Sign In")
+            email = st.text_input("Email", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            
+            if st.button("Sign In"):
+                if email and password:
+                    with st.spinner("Signing in..."):
+                        success, error = login(email, password)
+                    if success:
+                        st.rerun()
+                    else:
+                        st.error("Invalid email or password")
                 else:
-                    st.error("Invalid access code")
+                    st.warning("Please enter your email and password")
         else:
-            st.success("✅ Authenticated")
+            # Logged in state
+            st.success(f"✅ {st.session_state.user.email}")
+            st.caption(f"Plan: {st.session_state.user_role.upper()}")
+            
             if st.button("Logout"):
-                st.session_state.user_authenticated = False
-                st.session_state.messages = []
-                st.session_state.last_message_count = 0
+                logout()
                 st.rerun()
             
             st.markdown("---")
             st.subheader("Quick Actions")
             
-            # Preset questions for IONM
             preset_questions = [
                 "What are normal baseline values for SSEPs?",
                 "How to troubleshoot poor waveform quality?",
@@ -90,15 +125,14 @@ def main():
             
             for question in preset_questions:
                 if st.button(question, key=f"preset_{question[:20]}"):
-                    # Add to chat
                     st.session_state.messages.append({"role": "user", "content": question})
                     with st.spinner("Getting response..."):
                         response = call_n8n_webhook(question)
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     st.rerun()
 
-    # Main chat interface
-    if st.session_state.user_authenticated:
+    # Main content area
+    if st.session_state.user is not None:
         col1, col2 = st.columns([1, 6])
         with col1:
             st.image("App-Icon.ico", width=80)
@@ -113,10 +147,9 @@ def main():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
         
-        # Auto-scroll to bottom when new messages are added
+        # Auto-scroll
         if len(st.session_state.messages) > st.session_state.last_message_count:
             st.session_state.last_message_count = len(st.session_state.messages)
-            # Use JavaScript to scroll to bottom
             st.markdown(
                 """
                 <script>
@@ -128,17 +161,10 @@ def main():
         
         # Chat input
         if prompt := st.chat_input("Ask your IONM question..."):
-            # Add user message
             st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            # Get assistant response
             with st.spinner("Analyzing your question..."):
                 response = call_n8n_webhook(prompt)
-            
-            # Add assistant response to session state
             st.session_state.messages.append({"role": "assistant", "content": response})
-            
-            # Rerun to update the display
             st.rerun()
         
         # Clear chat button
@@ -147,8 +173,9 @@ def main():
                 st.session_state.messages = []
                 st.session_state.last_message_count = 0
                 st.rerun()
-                
+
     else:
+        # Welcome screen for non-logged in users
         col1, col2 = st.columns([1, 6])
         with col1:
             st.image("App-Icon.ico", width=80)
@@ -165,10 +192,9 @@ def main():
         - Evidence-based recommendations
         - 24/7 availability
         
-        Please authenticate in the sidebar to begin.
+        Please sign in using the sidebar to begin.
         """)
         
-        # Demo section for non-authenticated users
         st.subheader("What you can ask:")
         st.markdown("""
         - "What are the normal baseline values for SSEPs?"
