@@ -15,6 +15,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Custom meta tags for SEO
+st.markdown("""
+    <head>
+        <meta name="description" content="IOM Assist - Your AI-powered companion for intraoperative neuromonitoring questions.">
+        <meta property="og:title" content="IOM Assist">
+        <meta property="og:description" content="AI-powered IONM assistant for neuromonitoring professionals.">
+    </head>
+""", unsafe_allow_html=True)
+
 # Initialize Supabase client
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', '')
