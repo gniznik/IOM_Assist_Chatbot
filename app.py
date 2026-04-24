@@ -16,10 +16,9 @@ st.set_page_config(
 )
 
 # Initialize Supabase client
-supabase: Client = create_client(
-    os.getenv('SUPABASE_URL'),
-    os.getenv('SUPABASE_ANON_KEY')
-)
+SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', '')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Initialize session state
 if "messages" not in st.session_state:
@@ -205,4 +204,4 @@ def main():
         """)
 
 if __name__ == "__main__":
-    main()
+    main() 
