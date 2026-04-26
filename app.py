@@ -107,6 +107,11 @@ def logout():
     st.session_state.last_message_count = 0
     st.session_state.show_signup = False
 
+def has_chat_access():
+    """Check if user has access to chat"""
+    role = st.session_state.user_role
+    return role in ['beta', 'pro']
+
 def call_n8n_webhook(user_message):
     """Send message to n8n workflow and get response"""
     webhook_url = os.getenv('N8N_WEBHOOK_URL')
@@ -262,18 +267,42 @@ def main():
                 unsafe_allow_html=True
             )
 
-        if prompt := st.chat_input("Ask your IONM question..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.spinner("Analyzing your question..."):
-                response = call_n8n_webhook(prompt)
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.rerun()
-
-        if st.session_state.messages:
-            if st.button("Clear Chat History"):
-                st.session_state.messages = []
-                st.session_state.last_message_count = 0
+       # Check access
+        if has_chat_access():
+            if prompt := st.chat_input("Ask your IONM question..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.spinner("Analyzing your question..."):
+                    response = call_n8n_webhook(prompt)
+                st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
+
+            if st.session_state.messages:
+                if st.button("Clear Chat History"):
+                    st.session_state.messages = []
+                    st.session_state.last_message_count = 0
+                    st.rerun()
+        else:
+            # Free user upgrade prompt
+            st.markdown("---")
+            st.warning("🔒 Chat access requires a Pro subscription.")
+            st.markdown("**Upgrade to Pro** to get full access to IOM Assist:")
+            st.markdown("- Unlimited IONM questions")
+            st.markdown("- Real-time AI responses")
+            st.markdown("- 24/7 availability")
+            if st.button("⬆️ Upgrade to Pro - $29.95/month"):
+                checkout_session = stripe.checkout.Session.create(
+                    payment_method_types=['card'],
+                    line_items=[{
+                        'price': os.getenv('STRIPE_PRO_PRICE_ID'),
+                        'quantity': 1,
+                    }],
+                    mode='subscription',
+                    success_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=success",
+                    cancel_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=cancelled",
+                    customer_email=st.session_state.user.email,
+                )
+                st.markdown(f'<meta http-equiv="refresh" content="0;url={checkout_session.url}">', unsafe_allow_html=True)
+                st.info("Redirecting to payment...")
 
     else:
         col1, col2 = st.columns([1, 6])
