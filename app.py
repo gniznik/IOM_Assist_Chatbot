@@ -82,17 +82,21 @@ def signup(email, password, plan):
         else:
             # Pro plan — create Stripe checkout session
             checkout_session = stripe.checkout.Session.create(
-                payment_method_types=['card'],
-                line_items=[{
-                    'price': os.getenv('STRIPE_PRO_PRICE_ID'),
-                    'quantity': 1,
-                }],
-                mode='subscription',
-                success_url=f"{APP_URL}?payment=success&user_id={user.id}",
-                cancel_url=f"{APP_URL}?payment=cancelled",
-                customer_email=email,
-                metadata={'user_id': user.id}
-            )
+                  payment_method_types=['card'],
+                 line_items=[{
+                'price': os.getenv('STRIPE_PRO_PRICE_ID'),
+                'quantity': 1,
+            }],
+             mode='subscription',
+             subscription_data={
+                 'trial_period_days': 7
+             },
+             success_url=f"{APP_URL}?payment=success&user_id={user.id}",
+             cancel_url=f"{APP_URL}?payment=cancelled",
+             customer_email=email,
+             metadata={'user_id': user.id}
+)
+            
             return True, checkout_session.url, None
 
     except Exception as e:
@@ -182,12 +186,8 @@ def main():
                 confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
 
                 st.markdown("**Choose your plan:**")
-                plan = st.radio(
-                    "Plan",
-                    ["free", "pro"],
-                    format_func=lambda x: "Free - Basic access" if x == "free" else "Pro - Full access ($29.95/month)",
-                    label_visibility="collapsed"
-                )
+                plan = 'pro'
+                st.info("🎉 Start with a **7-day free trial** — no charge until your trial ends!")
 
                 if st.button("Create Account"):
                     if not email or not password:
@@ -291,16 +291,20 @@ def main():
             st.markdown("- 24/7 availability")
             if st.button("⬆️ Upgrade to Pro - $29.95/month"):
                 checkout_session = stripe.checkout.Session.create(
-                    payment_method_types=['card'],
-                    line_items=[{
-                        'price': os.getenv('STRIPE_PRO_PRICE_ID'),
-                        'quantity': 1,
-                    }],
-                    mode='subscription',
-                    success_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=success",
-                    cancel_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=cancelled",
-                    customer_email=st.session_state.user.email,
-                )
+                payment_method_types=['card'],
+                line_items=[{
+                 'price': os.getenv('STRIPE_PRO_PRICE_ID'),
+                 'quantity': 1,
+                 }],
+                 mode='subscription',
+                subscription_data={
+                     'trial_period_days': 7
+                },
+                success_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=success",
+                cancel_url=f"{os.getenv('APP_URL', 'https://iomassist.com')}?payment=cancelled",
+                 customer_email=st.session_state.user.email,
+)
+                
                 st.markdown(f'<meta http-equiv="refresh" content="0;url={checkout_session.url}">', unsafe_allow_html=True)
                 st.info("Redirecting to payment...")
 
