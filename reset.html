@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IOM Assist - Password Reset</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f6;
+        }
+        .message {
+            text-align: center;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+<div class="message">
+    <h2>IOM Assist</h2>
+    <p>Preparing your password reset...</p>
+</div>
+<script>
+// This page exists solely as a bridge between Supabase's password reset email
+// and the Streamlit app. Here's the problem it solves:
+//
+// Supabase sends reset links that redirect to:
+//   iomassist.com/reset#access_token=xxx&refresh_token=yyy&type=recovery
+//
+// The tokens are in the HASH FRAGMENT (after #), which means:
+//   - Browsers handle hash fragments entirely client-side
+//   - They never get sent to any server
+//   - Streamlit's Python server can NEVER read them
+//
+// This static page is a "middleman" that:
+//   1. Loads instantly in the browser (no server processing)
+//   2. Reads the hash fragment immediately using JavaScript
+//   3. Redirects to the Streamlit app with the tokens as proper query parameters
+//   4. Streamlit's Python server CAN read query parameters, so the reset works!
+
+(function() {
+    const hash = window.location.hash;
+    
+    if (hash && hash.includes('access_token')) {
+        // Parse the hash fragment as URL parameters
+        const params = new URLSearchParams(hash.substring(1));
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        const type = params.get('type');
+        
+        if (accessToken && refreshToken && type === 'recovery') {
+            // Build the clean URL that Streamlit can read
+            // We put everything as proper query parameters (after ?)
+            // instead of hash fragments (after #)
+            const streamlitUrl = 'https://iomassist.com/?type=recovery' +
+                '&access_token=' + encodeURIComponent(accessToken) +
+                '&refresh_token=' + encodeURIComponent(refreshToken);
+            
+            // Redirect immediately - user will barely notice this page
+            window.location.replace(streamlitUrl);
+        } else {
+            // Tokens found but something unexpected - go to main app
+            window.location.replace('https://iomassist.com/');
+        }
+    } else {
+        // No hash params - someone navigated here directly, send them home
+        window.location.replace('https://iomassist.com/');
+    }
+})();
+</script>
+</body>
+</html>
