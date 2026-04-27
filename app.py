@@ -25,10 +25,19 @@ st.markdown("""
     </head>
 """, unsafe_allow_html=True)
 
-# Initialize Supabase client
+from supabase import create_client, Client
+from supabase.lib.client_options import ClientOptions
+
+# Initialize Supabase client with PKCE flow for server-side apps
+# PKCE tells Supabase to use query parameters instead of hash fragments,
+# which is required because Streamlit's Python server can't read hash fragments
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', '')
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(
+    SUPABASE_URL, 
+    SUPABASE_KEY,
+    options=ClientOptions(flow_type="pkce")
+)
 
 # Initialize Stripe
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY', '')
@@ -173,38 +182,6 @@ def handle_url_params():
     """Handle URL parameters for payment redirects and password reset"""
     params = st.query_params
     
-    # Inject JavaScript to extract tokens from hash fragment
-    # Supabase puts ?type=recovery in the query string but access_token in the hash
-    # We need to move the hash tokens into query params so Streamlit can read them
-    st.markdown("""
-        <script>
-        (function() {
-            const hash = window.location.hash;
-            const search = window.location.search;
-            
-            // Only run if we have a recovery type in the query string
-            // AND tokens in the hash fragment that Streamlit can't read
-            if (search.includes('type=recovery') && hash.includes('access_token')) {
-                const hashParams = new URLSearchParams(hash.substring(1));
-                const accessToken = hashParams.get('access_token');
-                const refreshToken = hashParams.get('refresh_token');
-                
-                if (accessToken && refreshToken) {
-                    // Build a new URL with all tokens as proper query parameters
-                    // This replaces the hash fragment with readable query params
-                    const newUrl = window.location.pathname + 
-                        '?type=recovery' +
-                        '&access_token=' + encodeURIComponent(accessToken) +
-                        '&refresh_token=' + encodeURIComponent(refreshToken);
-                    
-                    // Replace the current URL without adding to browser history
-                    window.location.replace(newUrl);
-                }
-            }
-        })();
-        </script>
-    """, unsafe_allow_html=True)
-    
     # Handle payment redirects
     if params.get('payment') == 'success':
         st.success("🎉 Payment successful! Welcome to IOM Assist Pro!")
@@ -213,8 +190,23 @@ def handle_url_params():
         st.warning("Payment cancelled. You can try again anytime.")
         st.query_params.clear()
     
-    # Handle password reset recovery token
-    if params.get('type') == 'recovery':
+    # Handle password reset - PKCE flow sends a 'code' parameter
+    # We exchange this code for a session, then show the reset form
+    if params.get('type') == 'recovery' and params.get('code'):
+        try:
+            # Exchange the code for a session - this establishes auth context
+            result = supabase.auth.exchange_code_for_session({
+                "auth_code": params.get('code')
+            })
+            if result.session:
+                st.session_state.recovery_token = result.session.access_token
+                st.session_state.refresh_token = result.session.refresh_token
+                st.session_state.show_password_reset_form = True
+                st.query_params.clear()
+        except Exception as e:
+            st.error(f"Password reset link error: {str(e)}")
+    elif params.get('type') == 'recovery':
+        # Fallback for non-PKCE flow
         st.session_state.show_password_reset_form = True
         if params.get('access_token'):
             st.session_state.recovery_token = params.get('access_token')
