@@ -4,6 +4,7 @@ import os
 import stripe
 from dotenv import load_dotenv
 from supabase import create_client, Client
+ 
 
 # Load environment variables
 load_dotenv()
@@ -25,19 +26,12 @@ st.markdown("""
     </head>
 """, unsafe_allow_html=True)
 
-from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
-
-# Initialize Supabase client with PKCE flow for server-side apps
-# PKCE tells Supabase to use query parameters instead of hash fragments,
-# which is required because Streamlit's Python server can't read hash fragments
+# Initialize Supabase client normally - PKCE handled via auth options
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_KEY = os.getenv('SUPABASE_ANON_KEY', '')
-supabase: Client = create_client(
-    SUPABASE_URL, 
-    SUPABASE_KEY,
-    options=ClientOptions(flow_type="pkce")
-)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
 
 # Initialize Stripe
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY', '')
@@ -148,11 +142,14 @@ def send_password_reset(email):
     try:
         supabase.auth.reset_password_email(
             email,
-            options={"redirect_to": f"{os.getenv('APP_URL', 'https://iomassist.com')}/?type=recovery"}   
+            options={
+                "redirect_to": f"{os.getenv('APP_URL', 'https://iomassist.com')}/?type=recovery",
+                "captcha_token": None
+            }
         )
         return True, None
     except Exception as e:
-        return False, str(e)        
+        return False, str(e)       
 
 def has_chat_access():
     """Check if user has access to chat"""
