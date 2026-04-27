@@ -187,28 +187,71 @@ def handle_url_params():
         st.warning("Payment cancelled. You can try again anytime.")
         st.query_params.clear()
     
-    # Handle password reset - PKCE flow sends a 'code' parameter
-    # We exchange this code for a session, then show the reset form
-    if params.get('type') == 'recovery' and params.get('code'):
-        try:
-            # Exchange the code for a session - this establishes auth context
-            result = supabase.auth.exchange_code_for_session({
-                "auth_code": params.get('code')
-            })
-            if result.session:
-                st.session_state.recovery_token = result.session.access_token
-                st.session_state.refresh_token = result.session.refresh_token
-                st.session_state.show_password_reset_form = True
-                st.query_params.clear()
-        except Exception as e:
-            st.error(f"Password reset link error: {str(e)}")
-    elif params.get('type') == 'recovery':
-        # Fallback for non-PKCE flow
-        st.session_state.show_password_reset_form = True
-        if params.get('access_token'):
+    # Handle password reset
+    # Supabase puts tokens in the URL hash fragment which Python can't read directly.
+    # We use a hidden input as a bridge: JavaScript writes the tokens to it,
+    # which triggers a Streamlit rerun, and Python can then read them.
+    if params.get('type') == 'recovery':
+        
+        # Check if JavaScript has already extracted the tokens into session state
+        if not st.session_state.recovery_token:
+            # Inject JavaScript that reads the hash fragment and submits the tokens
+            # via a hidden form element that Streamlit can detect
+            st.markdown("""
+                <script>
+                (function() {
+                    const hash = window.location.hash;
+                    if (hash && hash.includes('access_token')) {
+                        const hashParams = new URLSearchParams(hash.substring(1));
+                        const accessToken = hashParams.get('access_token');
+                        const refreshToken = hashParams.get('refresh_token');
+                        
+                        if (accessToken && refreshToken) {
+                            // Store tokens in sessionStorage so they survive the redirect
+                            sessionStorage.setItem('sb_access_token', accessToken);
+                            sessionStorage.setItem('sb_refresh_token', refreshToken);
+                            
+                            // Redirect to clean URL - tokens are now in sessionStorage
+                            window.location.replace(
+                                window.location.pathname + '?type=recovery&tokens_ready=true'
+                            );
+                        }
+                    }
+                    
+                    // If tokens_ready flag is set, retrieve from sessionStorage
+                    // and put them in the URL as params Streamlit can read
+                    if (window.location.search.includes('tokens_ready=true')) {
+                        const accessToken = sessionStorage.getItem('sb_access_token');
+                        const refreshToken = sessionStorage.getItem('sb_refresh_token');
+                        
+                        if (accessToken && refreshToken) {
+                            // Now redirect with full params that Python can read
+                            window.location.replace(
+                                window.location.pathname + 
+                                '?type=recovery' +
+                                '&access_token=' + encodeURIComponent(accessToken) +
+                                '&refresh_token=' + encodeURIComponent(refreshToken)
+                            );
+                        }
+                    }
+                })();
+                </script>
+            """, unsafe_allow_html=True)
+        
+        # Read tokens if they made it into the query params via the two-step redirect
+        if params.get('access_token') and params.get('refresh_token'):
             st.session_state.recovery_token = params.get('access_token')
-        if params.get('refresh_token'):
             st.session_state.refresh_token = params.get('refresh_token')
+            st.session_state.show_password_reset_form = True
+            st.query_params.clear()
+        elif params.get('tokens_ready') == 'true':
+            # Tokens are in sessionStorage but sessionStorage->Python bridge 
+            # needs one more cycle - show a loading state
+            st.info("Loading password reset form...")
+            st.rerun()
+        else:
+            # First load - JavaScript is extracting tokens, show loading state
+            st.info("Preparing password reset form...")
 
 def main():
     # Handle payment redirects
