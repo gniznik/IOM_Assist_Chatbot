@@ -5,6 +5,7 @@ import stripe
 from dotenv import load_dotenv
 from supabase import create_client, Client
  
+# Password reset uses GitHub Pages middleman - see reset.html
 
 # Load environment variables
 load_dotenv()
