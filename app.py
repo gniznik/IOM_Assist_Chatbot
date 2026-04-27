@@ -53,6 +53,8 @@ if "show_password_reset_form" not in st.session_state:
     st.session_state.show_password_reset_form = False
 if "recovery_token" not in st.session_state:
     st.session_state.recovery_token = None
+if "refresh_token" not in st.session_state:
+    st.session_state.refresh_token = None
 
 def login(email, password):
     """Authenticate user with Supabase"""
@@ -118,12 +120,19 @@ def logout():
     st.session_state.show_signup = False
 
 def change_password(new_password):
-    """Change password for currently logged in user"""
+    """Change password for currently logged in user or during password reset"""
     try:
+        # If we have recovery tokens, establish a session first
+        # This is required for the forgot password flow where no session exists
+        if st.session_state.get('recovery_token') and st.session_state.get('refresh_token'):
+            supabase.auth.set_session(
+                access_token=st.session_state.recovery_token,
+                refresh_token=st.session_state.refresh_token
+            )
         supabase.auth.update_user({"password": new_password})
         return True, None
     except Exception as e:
-        return False, str(e)  
+        return False, str(e)
 
 def send_password_reset(email):
     """Send password reset email via Supabase"""
@@ -164,10 +173,37 @@ def handle_url_params():
     """Handle URL parameters for payment redirects and password reset"""
     params = st.query_params
     
-     
-    # TEMPORARY DEBUG - remove after testing
-    st.write("DEBUG params:", dict(params)) 
-    
+    # Inject JavaScript to extract tokens from hash fragment
+    # Supabase puts ?type=recovery in the query string but access_token in the hash
+    # We need to move the hash tokens into query params so Streamlit can read them
+    st.markdown("""
+        <script>
+        (function() {
+            const hash = window.location.hash;
+            const search = window.location.search;
+            
+            // Only run if we have a recovery type in the query string
+            // AND tokens in the hash fragment that Streamlit can't read
+            if (search.includes('type=recovery') && hash.includes('access_token')) {
+                const hashParams = new URLSearchParams(hash.substring(1));
+                const accessToken = hashParams.get('access_token');
+                const refreshToken = hashParams.get('refresh_token');
+                
+                if (accessToken && refreshToken) {
+                    // Build a new URL with all tokens as proper query parameters
+                    // This replaces the hash fragment with readable query params
+                    const newUrl = window.location.pathname + 
+                        '?type=recovery' +
+                        '&access_token=' + encodeURIComponent(accessToken) +
+                        '&refresh_token=' + encodeURIComponent(refreshToken);
+                    
+                    // Replace the current URL without adding to browser history
+                    window.location.replace(newUrl);
+                }
+            }
+        })();
+        </script>
+    """, unsafe_allow_html=True)
     
     # Handle payment redirects
     if params.get('payment') == 'success':
@@ -180,9 +216,10 @@ def handle_url_params():
     # Handle password reset recovery token
     if params.get('type') == 'recovery':
         st.session_state.show_password_reset_form = True
-        # Store the access token for use when setting the new password
         if params.get('access_token'):
             st.session_state.recovery_token = params.get('access_token')
+        if params.get('refresh_token'):
+            st.session_state.refresh_token = params.get('refresh_token')
 
 def main():
     # Handle payment redirects
