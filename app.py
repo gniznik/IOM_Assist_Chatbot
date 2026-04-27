@@ -200,13 +200,13 @@ def main():
                         with st.spinner("Creating account..."):
                             success, checkout_url, error = signup(email, password, plan)
                         if success and checkout_url:
-                            st.markdown(f'<meta http-equiv="refresh" content="0;url={checkout_url}">', unsafe_allow_html=True)
-                            st.info("Redirecting to payment...")
+                            st.info("📧 Please check your email to confirm your account, then complete payment.")
+                            st.markdown(f'<meta http-equiv="refresh" content="2;url={checkout_url}">', unsafe_allow_html=True)
                         elif success:
                             st.success("✅ Account created! Please check your email to confirm your account, then sign in.")
                             st.session_state.show_signup = False
                         else:
-                            st.error(f"Error: {error}")
+                            st.error(f"Error: {error}") 
 
                 st.markdown("---")
                 if st.button("← Back to Sign In"):
