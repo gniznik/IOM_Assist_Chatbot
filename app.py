@@ -47,6 +47,12 @@ if "last_message_count" not in st.session_state:
     st.session_state.last_message_count = 0
 if "show_signup" not in st.session_state:
     st.session_state.show_signup = False
+if "show_forgot_password" not in st.session_state:
+    st.session_state.show_forgot_password = False
+if "show_password_reset_form" not in st.session_state:
+    st.session_state.show_password_reset_form = False
+if "recovery_token" not in st.session_state:
+    st.session_state.recovery_token = None
 
 def login(email, password):
     """Authenticate user with Supabase"""
@@ -111,6 +117,25 @@ def logout():
     st.session_state.last_message_count = 0
     st.session_state.show_signup = False
 
+def change_password(new_password):
+    """Change password for currently logged in user"""
+    try:
+        supabase.auth.update_user({"password": new_password})
+        return True, None
+    except Exception as e:
+        return False, str(e)  
+
+def send_password_reset(email):
+    """Send password reset email via Supabase"""
+    try:
+        supabase.auth.reset_password_email(
+            email,
+            options={"redirect_to": f"{os.getenv('APP_URL', 'https://iomassist.com')}/?type=recovery"}   
+        )
+        return True, None
+    except Exception as e:
+        return False, str(e)        
+
 def has_chat_access():
     """Check if user has access to chat"""
     role = st.session_state.user_role
@@ -135,19 +160,56 @@ def call_n8n_webhook(user_message):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def handle_payment_redirect():
-    """Check URL params for payment status"""
+def handle_url_params():
+    """Handle URL parameters for payment redirects and password reset"""
     params = st.query_params
+    
+     
+    # TEMPORARY DEBUG - remove after testing
+    st.write("DEBUG params:", dict(params)) 
+    
+    
+    # Handle payment redirects
     if params.get('payment') == 'success':
         st.success("🎉 Payment successful! Welcome to IOM Assist Pro!")
         st.query_params.clear()
     elif params.get('payment') == 'cancelled':
         st.warning("Payment cancelled. You can try again anytime.")
         st.query_params.clear()
+    
+    # Handle password reset recovery token
+    if params.get('type') == 'recovery':
+        st.session_state.show_password_reset_form = True
+        # Store the access token for use when setting the new password
+        if params.get('access_token'):
+            st.session_state.recovery_token = params.get('access_token')
 
 def main():
     # Handle payment redirects
-    handle_payment_redirect()
+    handle_url_params()
+
+    # Show password reset form if recovery token detected
+    if st.session_state.show_password_reset_form:
+        st.title("Set New Password")
+        new_pass = st.text_input("New Password", type="password", key="recovery_password")
+        confirm_pass = st.text_input("Confirm Password", type="password", key="recovery_confirm")
+        
+        if st.button("Set New Password"):
+            if not new_pass or not confirm_pass:
+                st.warning("Please fill in both fields")
+            elif new_pass != confirm_pass:
+                st.error("Passwords don't match")
+            elif len(new_pass) < 6:
+                st.error("Password must be at least 6 characters")
+            else:
+                success, error = change_password(new_pass)
+                if success:
+                    st.success("✅ Password updated! Please sign in with your new password.")
+                    st.session_state.show_password_reset_form = False
+                    st.query_params.clear()
+                else:
+                    st.error(f"Error: {error}")
+        return  # Stop rendering the rest of the app while resetting password
 
     with st.sidebar:
         st.image("App-Icon.ico", width=80)
@@ -156,27 +218,54 @@ def main():
 
         if st.session_state.user is None:
             if not st.session_state.show_signup:
-                # Login form
-                st.subheader("Sign In")
-                email = st.text_input("Email", key="login_email")
-                password = st.text_input("Password", type="password", key="login_password")
-
-                if st.button("Sign In"):
-                    if email and password:
-                        with st.spinner("Signing in..."):
-                            success, error = login(email, password)
-                        if success:
-                            st.rerun()
+                if st.session_state.show_forgot_password:
+                    # Forgot password form
+                    st.subheader("Reset Password")
+                    st.caption("Enter your email and we'll send you a reset link.")
+                    reset_email = st.text_input("Email", key="reset_email")
+                    
+                    if st.button("Send Reset Link"):
+                        if reset_email:
+                            with st.spinner("Sending reset link..."):
+                                success, error = send_password_reset(reset_email)
+                            if success:
+                                st.success("✅ Check your email for a reset link!")
+                                st.session_state.show_forgot_password = False
+                            else:
+                                st.error(f"Error: {error}")
                         else:
-                            st.error("Invalid email or password")
-                    else:
-                        st.warning("Please enter your email and password")
+                            st.warning("Please enter your email")
+                    
+                    if st.button("← Back to Sign In"):
+                        st.session_state.show_forgot_password = False
+                        st.rerun()
+                else:
+                    # Normal login form
+                    st.subheader("Sign In")
+                    email = st.text_input("Email", key="login_email")
+                    password = st.text_input("Password", type="password", key="login_password")
 
-                st.markdown("---")
-                st.caption("Don't have an account?")
-                if st.button("Sign Up"):
-                    st.session_state.show_signup = True
-                    st.rerun()
+                    if st.button("Sign In"):
+                        if email and password:
+                            with st.spinner("Signing in..."):
+                                success, error = login(email, password)
+                            if success:
+                                st.rerun()
+                            else:
+                                st.error("Invalid email or password")
+                        else:
+                            st.warning("Please enter your email and password")
+
+                    st.markdown("---")
+                    if st.button("Forgot Password?"):
+                        st.session_state.show_forgot_password = True
+                        st.rerun()
+
+                    st.markdown("---")
+                    st.caption("Don't have an account?")
+                    if st.button("Sign Up"):
+                        st.session_state.show_signup = True
+                        st.rerun()
 
             else:
                 # Signup form
@@ -200,7 +289,7 @@ def main():
                         with st.spinner("Creating account..."):
                             success, checkout_url, error = signup(email, password, plan)
                         if success and checkout_url:
-                            st.info("📧 Please check your email to confirm your account, then complete payment.")
+                            st.warning("⚠️ **Important:** Check your email and confirm your account BEFORE completing payment. You will be redirected to payment in 2 seconds.")
                             st.markdown(f'<meta http-equiv="refresh" content="2;url={checkout_url}">', unsafe_allow_html=True)
                         elif success:
                             st.success("✅ Account created! Please check your email to confirm your account, then sign in.")
@@ -217,11 +306,32 @@ def main():
             # Logged in state
             st.success(f"✅ {st.session_state.user.email}")
             st.caption(f"Plan: {st.session_state.user_role.upper()}")
-
+            
             if st.button("Logout"):
                 logout()
                 st.rerun()
-
+            
+            st.markdown("---")
+            
+            # Password change form
+            with st.expander("🔑 Change Password"):
+                new_password = st.text_input("New Password", type="password", key="new_password")
+                confirm_new = st.text_input("Confirm New Password", type="password", key="confirm_new_password")
+                if st.button("Update Password"):
+                    if not new_password or not confirm_new:
+                        st.warning("Please fill in both fields")
+                    elif new_password != confirm_new:
+                        st.error("Passwords don't match")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        with st.spinner("Updating password..."):
+                            success, error = change_password(new_password)
+                        if success:
+                            st.success("✅ Password updated!")
+                        else:
+                            st.error(f"Error: {error}")
+            
             st.markdown("---")
             st.subheader("Quick Actions")
 
@@ -240,6 +350,8 @@ def main():
                         response = call_n8n_webhook(question)
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     st.rerun()
+
+    
 
     # Main content area
     if st.session_state.user is not None:
@@ -267,7 +379,7 @@ def main():
                 unsafe_allow_html=True
             )
 
-       # Check access
+        # Check access
         if has_chat_access():
             if prompt := st.chat_input("Ask your IONM question..."):
                 st.session_state.messages.append({"role": "user", "content": prompt})
